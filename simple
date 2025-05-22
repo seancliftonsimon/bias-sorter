@@ -1,207 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Custom Item Sorter – Simplified</title>
-    <style>
-        body { font-family: sans-serif; background: #1a0933; color: #fff; margin:0; padding:0; display:flex; justify-content:center; align-items:center; min-height:100vh; }
-        .container { width:90%; max-width:800px; padding:2rem; background:rgba(0,0,0,0.6); border-radius:10px; }
-        h1 { text-align:center; margin-bottom:1rem; }
-        textarea { width:100%; height:150px; margin-bottom:1rem; border-radius:5px; border:1px solid #ccc; padding:0.5rem; }
-        .preset-btn { display:inline-block; margin:0.5rem; padding:0.75rem 1.5rem; background:#ff6b35; border:none; border-radius:5px; cursor:pointer; text-align:center; }
-        .hidden { display:none; }
-        .battle-container { display:flex; justify-content:space-between; margin-top:1rem; }
-        .battle-item { width:45%; padding:1rem; background:rgba(255,255,255,0.1); border-radius:5px; cursor:pointer; text-align:center; user-select:none; }
-        .progress { margin:1rem 0; height:10px; background:rgba(255,255,255,0.2); border-radius:5px; overflow:hidden; }
-        .progress-fill { height:100%; background:#ff6b35; width:0; transition:width 0.3s; }
-        #debug-info { margin-top:1rem; padding:1rem; background:rgba(0,0,0,0.8); border-radius:5px; font-size:0.9rem; line-height:1.4; white-space:pre-wrap; }
-        ol { padding-left:1.2rem; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bias Sorter – Simplified & Fixed</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #fafafa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 90%;
+      max-width: 640px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin: 0.25rem;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+    .depth-btn {
+      background: #444;
+      color: #fff;
+    }
+    .depth-btn:hover {
+      background: #666;
+    }
+    .choice-btn {
+      width: 100%;
+      background: #2d7ef7;
+      color: #fff;
+      font-weight: 600;
+    }
+    .choice-btn:hover {
+      background: #4790ff;
+    }
+    .hidden { display: none; }
+    #progress {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    ol { padding-left: 1.2rem; }
+  </style>
 </head>
 <body>
-<div class="container">
-    <h1>Item Sorter Setup</h1>
-    <div id="setup-screen">
-        <p>Paste your items (comma-separated or on new lines):</p>
-        <textarea id="items-input"></textarea>
-        <button id="submit-items" class="preset-btn">Submit Items</button>
+  <div class="card">
+    <h1>Bias Sorter</h1>
+
+    <div id="setup">
+      <p>Select depth (higher = more comparisons):</p>
+      <button class="depth-btn" data-depth="1">Quick</button>
+      <button class="depth-btn" data-depth="2">Normal</button>
+      <button class="depth-btn" data-depth="3">Deep</button>
     </div>
-    <div id="preset-screen" class="hidden">
-        <h2>Choose Depth</h2>
-        <button data-depth="1" class="preset-btn">Quick</button>
-        <button data-depth="2" class="preset-btn">Standard</button>
-        <button data-depth="3" class="preset-btn">Exhaustive</button>
+
+    <div id="compare" class="hidden">
+      <p id="progress"></p>
+      <button id="left" class="choice-btn"></button>
+      <button id="right" class="choice-btn"></button>
     </div>
-    <div id="battle-screen" class="hidden">
-        <div id="progress-text" style="text-align:center; margin-bottom:0.5rem;"></div>
-        <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
-        <div class="battle-container">
-            <div id="choice-a" class="battle-item" tabindex="0"></div>
-            <div id="choice-b" class="battle-item" tabindex="0"></div>
-        </div>
-        <button id="skip-btn" class="preset-btn">Skip</button>
+
+    <div id="results" class="hidden">
+      <h2>Final Ranking</h2>
+      <ol id="rankList"></ol>
     </div>
-    <div id="results-screen" class="hidden">
-        <h2>Final Ranking</h2>
-        <ol id="results-list"></ol>
-        <button id="restart-btn" class="preset-btn">Start Over</button>
-    </div>
-    <div id="debug-info"></div>
-</div>
+  </div>
 
-<script>
-/********************  UTILS  ********************/
-function shuffle(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
+  <script>
+    // ======== config & helpers =========
+    const items = [
+      "Pizza Margherita",
+      "Goulash",
+      "Pad Thai",
+      "Falafel",
+      "Tiramisu"
+    ]; // replace with your actual list
 
-/********************  ELO SORTER – ONE‑LOOP VERSION  ********************/
-class EloSorter{
-  constructor(items, depth){
-    this.items   = shuffle(items.slice());
-    this.N       = this.items.length;
-    this.depth   = depth; // 1,2,3 …
+    const BASE_ELO = 1500;
+    const K = 24;
 
-    // Ratings & bookkeeping
-    this.data = Object.fromEntries(this.items.map(id=>[id,{r:1500,g:0}]));
-    this.compared = new Set();
+    let ratings = {};
+    let comparisons = 0;
+    let maxComparisons = 0;
+    let seenPairs = new Set();
+    let depthPref = 1;
 
-    // Budget & counters
-    this.maxComparisons = depth * Math.ceil(this.N * Math.log2(this.N));
-    this.comparisons    = 0;
-  }
+    const $ = (id) => document.getElementById(id);
 
-  // Pick two items with the closest ratings that haven’t been compared yet
-  _getNextPair(){
-    const sorted=[...this.items].sort((a,b)=>this.data[b].r-this.data[a].r);
-    let bestPair=null,bestGap=Infinity;
-    for(let i=0;i<sorted.length-1;i++){
-      const a=sorted[i],b=sorted[i+1];
-      const key=[a,b].sort().join('@');
-      if(this.compared.has(key))continue;
-      const gap=Math.abs(this.data[a].r-this.data[b].r);
-      if(gap<bestGap){bestGap=gap;bestPair=[a,b];}
+    // ======= Elo math ========
+    function expectedScore(ra, rb) {
+      return 1 / (1 + Math.pow(10, (rb - ra) / 400));
     }
-    return bestPair; // can be null
-  }
 
-  // Average adjacent spread – quick convergence check
-  _avgSpread(){
-    const sorted=[...this.items].sort((a,b)=>this.data[b].r-this.data[a].r);
-    if(sorted.length<2) return 0;
-    let total=0;
-    for(let i=0;i<sorted.length-1;i++){
-      total+=Math.abs(this.data[sorted[i]].r-this.data[sorted[i+1]].r);
+    function updateElo(pair, winnerIdx) {
+      const [a, b] = pair;
+      const ra = ratings[a];
+      const rb = ratings[b];
+      const ea = expectedScore(ra, rb);
+      const eb = 1 - ea;
+      ratings[a] = ra + K * ((winnerIdx === 0) - ea);
+      ratings[b] = rb + K * ((winnerIdx === 1) - eb);
     }
-    return total/(sorted.length-1);
-  }
 
-  // Public: next pair or null if done
-  next(){
-    if(this.comparisons>=this.maxComparisons) return null;
-    const pair=this._getNextPair();
-    if(!pair){ // Nothing informative left → stop early
-      return null;
+    // ====== pair selection ========
+    function makeKey(x, y) {
+      return x < y ? `${x}|${y}` : `${y}|${x}`;
     }
-    return pair;
-  }
 
-  // Record result & update Elo
-  record(winner, loser){
-    const Ra=this.data[winner].r, Rb=this.data[loser].r;
-    const Ea=1/(1+10**((Rb-Ra)/400)), Eb=1-Ea;
-    const K=24; // fixed for simplicity
-    this.data[winner].r = Ra + K*(1-Ea);
-    this.data[loser ].r = Rb + K*(0-Eb);
-    this.data[winner].g++; this.data[loser].g++;
-    this.compared.add([winner,loser].sort().join('@'));
-    this.comparisons++;
-  }
+    function getNextPair() {
+      // sort items by rating so we test closest-ranked neighbours first
+      const sorted = [...items].sort((x, y) => ratings[y] - ratings[x]);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const key = makeKey(sorted[i], sorted[i + 1]);
+        if (!seenPairs.has(key)) {
+          seenPairs.add(key);
+          return [sorted[i], sorted[i + 1]];
+        }
+      }
+      return null; // everyone compared at least once
+    }
 
-  done(){
-    if(this.comparisons>=this.maxComparisons) return true;
-    return this._avgSpread() < 15; // confidence threshold (tweak)
-  }
+    // ======= flow control =========
+    function startSorter(depth) {
+      depthPref = depth;
+      // init state
+      comparisons = 0;
+      maxComparisons = depthPref * Math.ceil(items.length * Math.log2(items.length));
+      ratings = Object.fromEntries(items.map((i) => [i, BASE_ELO]));
+      seenPairs = new Set();
 
-  results(){
-    return [...this.items].sort((a,b)=>this.data[b].r-this.data[a].r);
-  }
-}
+      // UI
+      $("setup").classList.add("hidden");
+      $("compare").classList.remove("hidden");
+      $("results").classList.add("hidden");
 
-/********************  UI LOGIC  ********************/
-const debugEl=document.getElementById('debug-info');
-const progressFill=document.getElementById('progress-fill');
-const progText=document.getElementById('progress-text');
-let sorter,currentPair;
+      nextComparison();
+    }
 
-// 1. Item submission
- document.getElementById('submit-items').onclick=()=>{
-   const raw=document.getElementById('items-input').value;
-   const items=raw.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
-   if(items.length<2){alert('Need at least two items');return;}
-   window._items=items;
-   document.getElementById('setup-screen').classList.add('hidden');
-   document.getElementById('preset-screen').classList.remove('hidden');
- };
+    function nextComparison() {
+      if (comparisons >= maxComparisons) {
+        finish();
+        return;
+      }
 
-// 2. Depth selection
- document.querySelectorAll('#preset-screen button').forEach(btn=>{
-   btn.onclick=()=>{
-     const depth=parseInt(btn.getAttribute('data-depth'),10);
-     sorter=new EloSorter(window._items,depth);
-     document.getElementById('preset-screen').classList.add('hidden');
-     document.getElementById('battle-screen').classList.remove('hidden');
-     nextBattle();
-   };
- });
+      const pair = getNextPair();
+      if (!pair) {
+        finish();
+        return;
+      }
 
-// 3. Main loop
- function nextBattle(){
-   if(sorter.done()) return showResults();
-   const pair=sorter.next();
-   if(!pair) return showResults();
-   currentPair=pair;
-   const [a,b]=pair;
-   document.getElementById('choice-a').textContent=a;
-   document.getElementById('choice-b').textContent=b;
-   updateProgress();
- }
+      // show pair to user
+      $("left").textContent = pair[0];
+      $("right").textContent = pair[1];
+      $("left").onclick = () => chooseWinner(pair, 0);
+      $("right").onclick = () => chooseWinner(pair, 1);
 
- function updateProgress(){
-   const pct=(sorter.comparisons/sorter.maxComparisons)*100;
-   progressFill.style.width=pct+'%';
-   progText.textContent=`${sorter.comparisons} of ${sorter.maxComparisons} comparisons (${pct.toFixed(0)}%)`;
-   debugEl.textContent=`Avg spread: ${sorter._avgSpread().toFixed(1)}`;
- }
+      $("progress").textContent = `Comparison ${comparisons + 1} of ${maxComparisons}`;
+    }
 
-// 4. Choice handlers
- function choose(idx){
-   const winner=currentPair[idx];
-   const loser =currentPair[1-idx];
-   sorter.record(winner,loser);
-   nextBattle();
- }
- document.getElementById('choice-a').onclick=()=>choose(0);
- document.getElementById('choice-b').onclick=()=>choose(1);
- document.getElementById('skip-btn').onclick=()=>nextBattle();
- document.addEventListener('keydown',e=>{
-   if(document.getElementById('battle-screen').classList.contains('hidden'))return;
-   if(e.key==='ArrowLeft') choose(0);
-   if(e.key==='ArrowRight') choose(1);
- });
+    function chooseWinner(pair, winnerIdx) {
+      updateElo(pair, winnerIdx);
+      comparisons++;
+      nextComparison();
+    }
 
-// 5. Results
- function showResults(){
-   document.getElementById('battle-screen').classList.add('hidden');
-   document.getElementById('results-screen').classList.remove('hidden');
-   const ol=document.getElementById('results-list');
-   ol.innerHTML='';
-   sorter.results().forEach(item=>{
-     const li=document.createElement('li');
-     li.textContent=item;
-     ol.appendChild(li);
-   });
-   document.getElementById('restart-btn').onclick=()=>location.reload();
- }
-</script>
+    function finish() {
+      $("compare").classList.add("hidden");
+      $("results").classList.remove("hidden");
+
+      const sortedFinal = [...items].sort((a, b) => ratings[b] - ratings[a]);
+      const list = $("rankList");
+      list.innerHTML = "";
+      sortedFinal.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = `${item}  (Elo: ${Math.round(ratings[item])})`;
+        list.appendChild(li);
+      });
+    }
+
+    // ====== depth buttons events =======
+    document.querySelectorAll(".depth-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const depth = parseInt(btn.dataset.depth, 10);
+        startSorter(depth);
+      });
+    });
+  </script>
 </body>
 </html>
