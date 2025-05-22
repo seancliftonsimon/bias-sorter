@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Item Sorter</title>
+    <style>
+        body { font-family: sans-serif; background: #1a0933; color: #fff; margin:0; padding:0; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+        .container { width:90%; max-width:800px; padding:2rem; background:rgba(0,0,0,0.6); border-radius:10px; }
+        h1 { text-align:center; margin-bottom:1rem; }
+        textarea { width:100%; height:150px; margin-bottom:1rem; border-radius:5px; border:1px solid #ccc; padding:0.5rem; }
+        .preset-btn { display:inline-block; margin:0.5rem; padding:0.75rem 1.5rem; background:#ff6b35; border:none; border-radius:5px; cursor:pointer; text-align:center; }
+        .hidden { display:none; }
+        .battle-container { display:flex; justify-content:space-between; margin-top:1rem; }
+        .battle-item { width:45%; padding:1rem; background:rgba(255,255,255,0.1); border-radius:5px; cursor:pointer; text-align:center; user-select:none; }
+        .progress { margin:1rem 0; }
+        .progress-bar { width:100%; height:10px; background:rgba(255,255,255,0.2); border-radius:5px; overflow:hidden; }
+        .progress-fill { width:0; height:100%; background:#ffce00; transition: width 0.3s; }
+        .progress-text { text-align:center; margin-bottom:0.5rem; }
+        #debug-info { margin-top:1rem; padding:1rem; background:rgba(0,0,0,0.8); border-radius:5px; font-size:0.9rem; line-height:1.4; white-space:pre-wrap; }
+        ol { padding-left:1.2rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Item Sorter Setup</h1>
+    <div id="setup-screen">
+        <p>Paste your items (comma-separated or new lines):</p>
+        <textarea id="items-input"></textarea>
+        <button id="submit-items" class="preset-btn">Submit Items</button>
+    </div>
+    <div id="preset-screen" class="hidden">
+        <h2>Choose Depth Preset</h2>
+        <button data-preset="quick" class="preset-btn"></button>
+        <button data-preset="standard" class="preset-btn"></button>
+        <button data-preset="exhaustive" class="preset-btn"></button>
+    </div>
+    <div id="battle-screen" class="hidden">
+        <div id="progress-text" class="progress-text"></div>
+        <div class="progress"><div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div></div>
+        <div class="battle-container">
+            <div id="choice-a" class="battle-item" tabindex="0"></div>
+            <div id="choice-b" class="battle-item" tabindex="0"></div>
+        </div>
+        <button id="skip-btn" class="preset-btn">Skip</button>
+    </div>
+    <div id="results-screen" class="hidden">
+        <h2>Final Ranking</h2>
+        <ol id="results-list"></ol>
+        <button id="restart-btn" class="preset-btn">Start Over</button>
+    </div>
+    <div id="debug-info"></div>
+</div>
+<script>
+// Global presets
+const presets = [
+    { key:'quick', name:'Quick & Dirty',
+      minBandRounds:1, crossEvery:3,
+      Kfloor:32, stopDelta:15, requireOverlap:false, bandSize:7 },
+    { key:'standard', name:'Standard',
+      minBandRounds:2, crossEvery:2,
+      Kfloor:16, stopDelta:8, requireOverlap:true, bandSize:6 },
+    { key:'exhaustive', name:'Exhaustive',
+      minBandRounds:4, crossEvery:1,
+      Kfloor:8, stopDelta:5, requireOverlap:true, bandSize:5 }
+];
+
+// Shuffle utility
+function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+// EloSorter class
+class EloSorter {
+    constructor(items, cfg) {
+        this.items = shuffle(items.slice());
+        this.cfg = cfg;
+        this.data = {};
+        this.items.forEach(id => this.data[id] = { rating:1500, games_played:0, last_delta:0 });
+        this.stepCount = 0;
+        this.phase1Done = false;
+        this.bandRoundsDone = 0;
+        this.queue = [];
+        this.comparisonTarget = Infinity;
+    }
+    phase1() {
+        for (let i = 0; i < this.items.length - 1; i++) {
+            this.queue.push([this.items[i], this.items[i+1]]);
+        }
+        this.phase1Done = true;
+    }
+    phase2() {
+        const sorted = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+        const bands = [];
+        for (let i = 0; i < sorted.length; i += this.cfg.bandSize) {
+            bands.push(sorted.slice(i, i + this.cfg.bandSize));
+        }
+        bands.forEach((band, idx) => {
+            band.sort((a,b) => this.data[a].games_played - this.data[b].games_played);
+            if (band.length > 1) this.queue.push([band[0], band[1]]);
+            if (band.length > 3) this.queue.push([band[2], band[3]]);
+            if (this.cfg.crossEvery !== Infinity && this.bandRoundsDone % this.cfg.crossEvery === 0 && idx < bands.length -1) {
+                const opp = bands[idx+1][bands[idx+1].length-1];
+                this.queue.push([band[0], opp]);
+            }
+        });
+        this.bandRoundsDone++;
+    }
+    phase3() {
+        const sorted = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+        for (let i = 0; i < sorted.length - 1; i++) {
+            const a = sorted[i], b = sorted[i+1];
+            const confA = this.cfg.Kfloor / Math.sqrt(this.data[a].games_played || 1);
+            const confB = this.cfg.Kfloor / Math.sqrt(this.data[b].games_played || 1);
+            if (Math.abs(this.data[a].rating - this.data[b].rating) < Math.max(confA, confB)) {
+                this.queue.push([a, b]);
+            }
+        }
+    }
+    shouldStop() {
+        if (this.bandRoundsDone < this.cfg.minBandRounds) return false;
+        const maxDelta = Math.max(...Object.values(this.data).map(d => Math.abs(d.last_delta)));
+        if (maxDelta >= this.cfg.stopDelta) return false;
+        if (this.cfg.requireOverlap) {
+            const sorted = this.results();
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const a = sorted[i], b = sorted[i+1];
+                const confA = this.cfg.Kfloor / Math.sqrt(this.data[a].games_played || 1);
+                const confB = this.cfg.Kfloor / Math.sqrt(this.data[b].games_played || 1);
+                if (Math.abs(this.data[a].rating - this.data[b].rating) < Math.max(confA, confB)) return false;
+            }
+        }
+        return true;
+    }
+    next() {
+        if (this.shouldStop()) return null;
+        while (!this.queue.length) {
+            if (this.shouldStop()) return null;
+            if (!this.phase1Done) this.phase1();
+            else {
+                this.phase2();
+                if (this.cfg.requireOverlap && this.bandRoundsDone >= this.cfg.minBandRounds) this.phase3();
+            }
+        }
+        this.stepCount++;
+        if (this.comparisonTarget === Infinity && this.shouldStop()) {
+            this.comparisonTarget = this.stepCount + 2 * this.items.length;
+        }
+        if (this.shouldStop()) return null;
+        return this.queue.shift();
+    }
+    record(winner, loser) {
+        const wi = this.data[winner], lo = this.data[loser];
+        const exp = 1 / (1 + 10 ** ((lo.rating - wi.rating) / 400));
+        const rawK = 64 / Math.log2(wi.games_played + 2);
+        const K = Math.max(this.cfg.Kfloor, rawK);
+        const delta = K * (1 - exp);
+        wi.rating += delta;
+        lo.rating -= delta;
+        wi.last_delta = delta;
+        lo.last_delta = -delta;
+        wi.games_played++;
+        lo.games_played++;
+    }
+    results() {
+        return [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+    }
+}
+
+let sorter, current;
+const debugEl = document.getElementById('debug-info');
+const progText = document.getElementById('progress-text');
+
+// Setup submission
+document.getElementById('submit-items').onclick = () => {
+    const raw = document.getElementById('items-input').value;
+    const items = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    window.items = items;
+    const n = items.length;
+    presets.forEach(p => {
+        const comps = p.minBandRounds * (n - 1) + (p.requireOverlap ? n : 0);
+        const mins = (comps * 4 / 60).toFixed(1);
+        document.querySelector(`#preset-screen button[data-preset="${p.key}"]`).innerHTML =
+            `${p.name}<br><small>≈ ${comps} comps<br>≈ ${mins} min</small>`;
+        p.estimatedComparisons = comps;
+    });
+    document.getElementById('setup-screen').classList.add('hidden');
+    document.getElementById('preset-screen').classList.remove('hidden');
+};
+
+// Preset selection
+document.querySelectorAll('#preset-screen button').forEach(btn => {
+    btn.onclick = () => {
+        const key = btn.getAttribute('data-preset');
+        const p = presets.find(o => o.key === key);
+        sorter = new EloSorter(window.items, p);
+        sorter.comparisonTarget = p.estimatedComparisons;
+        document.getElementById('preset-screen').classList.add('hidden');
+        document.getElementById('battle-screen').classList.remove('hidden');
+        nextBattle();
+    };
+});
+
+// Core battle loop
+function nextBattle() {
+    const pair = sorter.next();
+    if (!pair) return showResults();
+    current = pair;
+    const [a, b] = pair;
+    document.getElementById('choice-a').textContent = a;
+    document.getElementById('choice-b').textContent = b;
+    const da = sorter.data[a], db = sorter.data[b];
+    debugEl.textContent =
+        `Phase1: ${sorter.phase1Done}, BandsDone: ${sorter.bandRoundsDone}/${sorter.cfg.minBandRounds}, ` +
+        `Polish? ${sorter.cfg.requireOverlap && sorter.bandRoundsDone >= sorter.cfg.minBandRounds}` +
+        `\nPair: ${a} vs ${b}` +
+        `\nRatings: ${da.rating.toFixed(1)} vs ${db.rating.toFixed(1)}` +
+        `\nGames: ${da.games_played} vs ${db.games_played}` +
+        `\nΔ: ${da.last_delta.toFixed(1)} vs ${db.last_delta.toFixed(1)}`;
+    const s = sorter.stepCount;
+    const t = sorter.comparisonTarget;
+    const pct = t === Infinity ? 0 : Math.min(100, (s / t) * 100);
+    document.getElementById('progress-fill').style.width = `${pct}%`;
+    progText.textContent = t === Infinity
+        ? `Comparison ${s} (estimating…)`
+        : `Comparison ${s} of ~${t}`;
+}
+
+// Record user choice
+function recordChoice(idx) {
+    sorter.record(current[idx], current[1-idx]);
+    nextBattle();
+}
+
+document.getElementById('choice-a').onclick = () => recordChoice(0);
+document.getElementById('choice-b').onclick = () => recordChoice(1);
+document.getElementById('skip-btn').onclick = () => { sorter.log.push({ skipped: current }); nextBattle(); };
+document.addEventListener('keydown', e => {
+    if (!document.getElementById('battle-screen').classList.contains('hidden')) {
+        if (e.key === 'ArrowLeft') recordChoice(0);
+        if (e.key === 'ArrowRight') recordChoice(1);
+    }
+});
+
+// Display results
+function showResults() {
+    document.getElementById('battle-screen').classList.add('hidden');
+    document.getElementById('results-screen').classList.remove('hidden');
+    const ol = document.getElementById('results-list');
+    ol.innerHTML = '';
+    sorter.results().forEach(item => {
+        const li = document.createElement('li'); li.textContent = item; ol.appendChild(li);
+    });
+    document.getElementById('restart-btn').onclick = () => location.reload();
+}
+</script>
+</body>
+</html>
