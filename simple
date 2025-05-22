@@ -1,210 +1,909 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bias Sorter – Simplified & Fixed</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, sans-serif;
-      background: #111;
-      color: #fafafa;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .card {
-      background: #1e1e1e;
-      border-radius: 12px;
-      padding: 2rem;
-      width: 90%;
-      max-width: 640px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-    }
-    h1 {
-      margin-top: 0;
-      font-size: 1.5rem;
-      text-align: center;
-    }
-    button {
-      cursor: pointer;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      margin: 0.25rem;
-      font-size: 1rem;
-      transition: background 0.2s;
-    }
-    .depth-btn {
-      background: #444;
-      color: #fff;
-    }
-    .depth-btn:hover {
-      background: #666;
-    }
-    .choice-btn {
-      width: 100%;
-      background: #2d7ef7;
-      color: #fff;
-      font-weight: 600;
-    }
-    .choice-btn:hover {
-      background: #4790ff;
-    }
-    .hidden { display: none; }
-    #progress {
-      margin-top: 1rem;
-      font-size: 0.9rem;
-      opacity: 0.8;
-    }
-    ol { padding-left: 1.2rem; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Item Sorter</title>
+    <style>
+        body { font-family: sans-serif; background: #1a0933; color: #fff; margin:0; padding:0; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+        .container { width:90%; max-width:800px; padding:2rem; background:rgba(0,0,0,0.6); border-radius:10px; }
+        h1 { text-align:center; margin-bottom:1rem; }
+        textarea { width:100%; height:150px; margin-bottom:1rem; border-radius:5px; border:1px solid #ccc; padding:0.5rem; }
+        .preset-btn { display:inline-block; margin:0.5rem; padding:0.75rem 1.5rem; background:#ff6b35; border:none; border-radius:5px; cursor:pointer; text-align:center; }
+        .hidden { display:none; }
+        .battle-container { display:flex; justify-content:space-between; margin-top:1rem; }
+        .battle-item { width:45%; padding:1rem; background:rgba(255,255,255,0.1); border-radius:5px; cursor:pointer; text-align:center; user-select:none; }
+        .progress { margin:1rem 0; }
+        .progress-bar { /* Ensure it's a flex container */
+            display: flex;
+            width: 100%;
+            height: 10px; /* Or keep existing height */
+            background: rgba(255,255,255,0.2); /* Or keep existing */
+            border-radius: 5px; /* Or keep existing */
+            overflow: hidden; /* Or keep existing */
+        }
+        .progress-segment {
+            height: 100%;
+            transition: width 0.3s, background-color 0.3s; /* Added background-color transition for glow */
+        }
+        .progress-seed {
+            background-color: #FF6B35; /* Example color for Seed phase */
+            width: 15%; /* Initial estimated width */
+        }
+        .progress-learn {
+            background-color: #FFCE00; /* Example color for Learn phase */
+            width: 70%; /* Initial estimated width */
+        }
+        .progress-polish {
+            background-color: #4CAF50; /* Example color for Polish phase */
+            width: 15%; /* Initial estimated width */
+        }
+        .active-glow {
+            box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.7); /* Example glow */
+            z-index: 1; /* Ensure glow is visible if segments are tight */
+        }
+        .progress-text { text-align:center; margin-bottom:0.5rem; }
+        #debug-info { margin-top:1rem; padding:1rem; background:rgba(0,0,0,0.8); border-radius:5px; font-size:0.9rem; line-height:1.4; white-space:pre-wrap; }
+        ol { padding-left:1.2rem; }
+
+        .phase-badges-container {
+            display: flex;
+            justify-content: space-around; /* Or space-between */
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+        }
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            background-color: #444; /* Default/pending state */
+            color: #ccc;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .badge.completed {
+            background-color: #28a745; /* Green for completed */
+            color: #fff;
+        }
+        .badge.pending { 
+            /* Could have specific pending styles if different from default */
+            background-color: #6c757d; /* Grey for pending/active check */
+        }
+        /* Style for badges that are not applicable to current preset (e.g. overlap for Quick) */
+        .badge.not-applicable {
+            display: none; 
+        }
+
+        .tooltip {
+            position: absolute; /* Or fixed, depending on desired behavior */
+            background-color: #333;
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 100; /* Ensure it's above other elements */
+            width: 250px; /* Or max-width */
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .tooltip.hidden {
+            display: none;
+        }
+        .tooltip strong {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 1rem;
+        }
+    </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Bias Sorter</h1>
-
-    <div id="setup">
-      <p>Select depth (higher = more comparisons):</p>
-      <button class="depth-btn" data-depth="1">Quick</button>
-      <button class="depth-btn" data-depth="2">Normal</button>
-      <button class="depth-btn" data-depth="3">Deep</button>
+<div class="container">
+    <h1>Item Sorter Setup</h1>
+    <div id="setup-screen">
+        <p>Paste your items (comma-separated or new lines):</p>
+        <textarea id="items-input"></textarea>
+        <button id="submit-items" class="preset-btn">Submit Items</button>
     </div>
-
-    <div id="compare" class="hidden">
-      <p id="progress"></p>
-      <button id="left" class="choice-btn"></button>
-      <button id="right" class="choice-btn"></button>
+    <div id="preset-screen" class="hidden">
+        <h2>Choose Depth Preset</h2>
+        <button data-preset="quick" class="preset-btn"></button>
+        <button data-preset="standard" class="preset-btn"></button>
+        <button data-preset="exhaustive" class="preset-btn"></button>
     </div>
-
-    <div id="results" class="hidden">
-      <h2>Final Ranking</h2>
-      <ol id="rankList"></ol>
+    <div id="battle-screen" class="hidden">
+        <div id="progress-text" class="progress-text"></div>
+        <div class="progress">
+            <div class="progress-bar">
+                <div id="progress-seed" class="progress-segment progress-seed"></div>
+                <div id="progress-learn" class="progress-segment progress-learn"></div>
+                <div id="progress-polish" class="progress-segment progress-polish"></div>
+            </div>
+        </div>
+        <div id="phase-badges" class="phase-badges-container">
+            <span id="badge-seed" class="badge">Seed pass</span>
+            <span id="badge-min-swiss" class="badge">Min Swiss rounds</span>
+            <span id="badge-max-delta" class="badge">Delta target</span>
+            <span id="badge-no-overlap" class="badge">No overlaps</span>
+        </div>
+        <div class="battle-container">
+            <div id="choice-a" class="battle-item" tabindex="0"></div>
+            <div id="choice-b" class="battle-item" tabindex="0"></div>
+        </div>
+        <button id="skip-btn" class="preset-btn">Skip</button>
     </div>
-  </div>
+    <div id="results-screen" class="hidden">
+        <h2>Final Ranking</h2>
+        <ol id="results-list"></ol>
+        <button id="restart-btn" class="preset-btn">Start Over</button>
+    </div>
+    <div id="debug-info"></div>
+</div>
+<script>
+// Global presets
+const presets = [
+    { key:'quick', name:'Quick & Dirty',
+      minBandRounds:1, crossEvery:3,
+      Kfloor:32, stopDelta:17, requireOverlap:false, bandSize:7 },
+    { key:'standard', name:'Standard',
+      minBandRounds:2, crossEvery:2,
+      Kfloor:16, stopDelta:9, requireOverlap:true, bandSize:6 },
+    { key:'exhaustive', name:'Exhaustive',
+      minBandRounds:4, crossEvery:1,
+      Kfloor:8, stopDelta:5, requireOverlap:true, bandSize:5 }
+];
 
-  <script>
-    // ======== config & helpers =========
-    const items = [
-      "Pizza Margherita",
-      "Goulash",
-      "Pad Thai",
-      "Falafel",
-      "Tiramisu"
-    ]; // replace with your actual list
+// Shuffle utility
+function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
 
-    const BASE_ELO = 1500;
-    const K = 24;
-
-    let ratings = {};
-    let comparisons = 0;
-    let maxComparisons = 0;
-    let seenPairs = new Set();
-    let depthPref = 1;
-
-    const $ = (id) => document.getElementById(id);
-
-    // ======= Elo math ========
-    function expectedScore(ra, rb) {
-      return 1 / (1 + Math.pow(10, (rb - ra) / 400));
+// EloSorter class
+class EloSorter {
+    constructor(items, cfg) {
+        this.items = shuffle(items.slice());
+        this.cfg = cfg;
+        this.data = {};
+        this.items.forEach(id => this.data[id] = { rating:1500, games_played:0, last_delta:0, last_delta_update_step: 0 });
+        this.currentPhase = 'seed'; // Initial phase
+        this.stepCount = 0;
+        this.phase1Done = false;
+        this.bandRoundsDone = 0;
+        this.round_start_step = 0;
+        this.comparedPairs = new Set();
+        this.queue = [];
+        this.comparisonTarget = Infinity; // UI Hint, not strict stop condition
+        this.remainingLow = 0;
+        this.remainingHigh = Infinity;
+        this.totalSeedComparisons = 0;
+        this.totalLearnComparisons = 0;
+        this.totalPolishComparisons = 0;
+        this.phase1InitialQueueSize = 0;
+        this.lastPhase3OverlapSignature = null; // Managed by phase3
+        this.polishStagnationDetected = false;  // Set by phase3 or polishCycleCounter, not reset elsewhere
+        this.polishCycleCounter = 0;
+        this.maxPolishCycles = this.items.length * 2; 
     }
 
-    function updateElo(pair, winnerIdx) {
-      const [a, b] = pair;
-      const ra = ratings[a];
-      const rb = ratings[b];
-      const ea = expectedScore(ra, rb);
-      const eb = 1 - ea;
-      ratings[a] = ra + K * ((winnerIdx === 0) - ea);
-      ratings[b] = rb + K * ((winnerIdx === 1) - eb);
-    }
-
-    // ====== pair selection ========
-    function makeKey(x, y) {
-      return x < y ? `${x}|${y}` : `${y}|${x}`;
-    }
-
-    function getNextPair() {
-      // sort items by rating so we test closest-ranked neighbours first
-      const sorted = [...items].sort((x, y) => ratings[y] - ratings[x]);
-      for (let i = 0; i < sorted.length - 1; i++) {
-        const key = makeKey(sorted[i], sorted[i + 1]);
-        if (!seenPairs.has(key)) {
-          seenPairs.add(key);
-          return [sorted[i], sorted[i + 1]];
+    phase1() { // Seed phase
+        for (let i = 0; i < this.items.length - 1; i++) {
+            this.queue.push([this.items[i], this.items[i+1]]);
         }
-      }
-      return null; // everyone compared at least once
+        this.phase1InitialQueueSize = this.queue.length;
+        // phase1Done will be set in next() once this queue is processed or if phase1 is skipped
     }
 
-    // ======= flow control =========
-    function startSorter(depth) {
-      depthPref = depth;
-      // init state
-      comparisons = 0;
-      maxComparisons = depthPref * Math.ceil(items.length * Math.log2(items.length));
-      ratings = Object.fromEntries(items.map((i) => [i, BASE_ELO]));
-      seenPairs = new Set();
+    phase2() { // Learn phase (Swiss-style bands)
+        // *** MODIFICATION START: Removed the block that reset polishStagnationDetected and lastPhase3OverlapSignature ***
+        // This phase should focus on its task: generating pairs for learning,
+        // not managing state for other phases or global termination.
+        // *** MODIFICATION END ***
 
-      // UI
-      $("setup").classList.add("hidden");
-      $("compare").classList.remove("hidden");
-      $("results").classList.add("hidden");
-
-      nextComparison();
+        this.round_start_step = this.stepCount; 
+        const sorted = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+        const bands = [];
+        for (let i = 0; i < sorted.length; i += this.cfg.bandSize) {
+            bands.push(sorted.slice(i, i + this.cfg.bandSize));
+        }
+        bands.forEach((band, idx) => {
+            band.sort((a,b) => this.data[a].games_played - this.data[b].games_played);
+            if (band.length > 1) this.queue.push([band[0], band[1]]);
+            if (band.length > 3) this.queue.push([band[2], band[3]]); // Compare 3rd and 4th if band is large enough
+            if (this.cfg.crossEvery !== Infinity && 
+                this.bandRoundsDone % this.cfg.crossEvery === 0 && 
+                idx < bands.length -1 && 
+                bands[idx+1].length > 0) { // Ensure next band exists and is not empty
+                const opp = bands[idx+1][bands[idx+1].length-1]; // Strongest of next band (by rating before games_played sort)
+                                                                // or could be weakest (bands[idx+1][0])
+                                                                // current logic: band[0] vs opp (strongest of current vs weakest rated of next)
+                this.queue.push([band[0], opp]);
+            }
+        });
+        this.bandRoundsDone++;
     }
 
-    function nextComparison() {
-      if (comparisons >= maxComparisons) {
-        finish();
+    phase3() { // Polish phase
+        const sortedForPhase3 = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+        const currentOverlappingPairKeys = []; 
+        const pairsToQueue = []; 
+
+        if (sortedForPhase3.length > 1) {
+            for (let i = 0; i < sortedForPhase3.length - 1; i++) {
+                const itemA = sortedForPhase3[i];
+                const itemB = sortedForPhase3[i+1];
+                const confA = this.cfg.Kfloor / Math.sqrt(this.data[itemA].games_played || 1);
+                const confB = this.cfg.Kfloor / Math.sqrt(this.data[itemB].games_played || 1);
+
+                if (Math.abs(this.data[itemA].rating - this.data[itemB].rating) < Math.max(confA, confB)) {
+                    currentOverlappingPairKeys.push([itemA, itemB].sort().join('@@'));
+                    pairsToQueue.push([itemA, itemB]); 
+                }
+            }
+        }
+
+        const newOverlapSignature = currentOverlappingPairKeys.sort().join('|');
+
+        // Check for stagnation: same non-empty set of overlaps as last time
+        if (this.lastPhase3OverlapSignature !== null &&
+            newOverlapSignature === this.lastPhase3OverlapSignature &&
+            newOverlapSignature !== "") { 
+            this.polishStagnationDetected = true; // Signal to stop
+            // console.log("Polish phase stagnation detected by signature. Overlaps: " + newOverlapSignature);
+            return; // Do not queue pairs if stagnation detected
+        }
+
+        this.lastPhase3OverlapSignature = newOverlapSignature; // Update signature for next phase3 call
+
+        if (pairsToQueue.length > 0) {
+            pairsToQueue.forEach(pair => this.queue.push(pair));
+        }
+        // If pairsToQueue is empty, it means no overlaps were found by this phase.
+        // shouldStop() will then re-evaluate if other conditions (like exhaustive) are met.
+    }
+
+    shouldStop() {
+        if (this.polishStagnationDetected) {
+            // console.log("Stopping due to polishStagnationDetected flag.");
+            return true;
+        }
+
+        if (this.bandRoundsDone < this.cfg.minBandRounds) return false;
+
+        const recentDeltas = Object.values(this.data)
+            .filter(d => d.last_delta_update_step >= this.round_start_step) // Deltas from the current/last round of comparisons
+            .map(d => Math.abs(d.last_delta));
+        const maxDelta = recentDeltas.length > 0 ? Math.max(...recentDeltas) : 0;
+        if (maxDelta >= this.cfg.stopDelta && this.phase1Done) { // Don't check delta during seed phase or if not enough rounds
+             return false;
+        }
+
+
+        if (this.cfg.requireOverlap) {
+            const sorted = this.results();
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const a = sorted[i], b = sorted[i+1];
+                const confA = this.cfg.Kfloor / Math.sqrt(this.data[a].games_played || 1);
+                const confB = this.cfg.Kfloor / Math.sqrt(this.data[b].games_played || 1);
+                if (Math.abs(this.data[a].rating - this.data[b].rating) < Math.max(confA, confB)) {
+                    return false; // Overlap detected, continue sorting
+                }
+            }
+        }
+
+        if (this.cfg.key === 'exhaustive') {
+            const sortedItems = this.results(); 
+            let allNeighboursTested = true;
+            if (sortedItems.length > 1) {
+                for (let i = 0; i < sortedItems.length - 1; i++) {
+                    const pairKey = [sortedItems[i], sortedItems[i+1]].sort().join('@@');
+                    if (!this.comparedPairs.has(pairKey)) {
+                        allNeighboursTested = false;
+                        break;
+                    }
+                }
+            }
+            if (!allNeighboursTested) {
+                return false; // Exhaustive requires all adjacent pairs to be tested
+            }
+        }
+        // console.log("All stop conditions met.");
+        return true; // All conditions for stopping are met
+    }
+
+    next() {
+        if (this.shouldStop()) return null;
+
+        while (this.queue.length === 0) {
+            // Check stop condition again, as state might have changed (e.g., by polishCycleCounter)
+            if (this.shouldStop()) return null;
+
+            // Polish Cycle Counter Logic (Safety net for polish phase)
+            const currentMaxDeltaForPolishCheck = Object.values(this.data)
+                .filter(d => d.last_delta_update_step >= this.round_start_step)
+                .map(d => Math.abs(d.last_delta));
+            const maxDeltaValueForPolish = currentMaxDeltaForPolishCheck.length > 0 ? Math.max(...currentMaxDeltaForPolishCheck) : 0;
+        
+            const isEffectivelyInPolishCondition = this.phase1Done &&
+                                             this.bandRoundsDone >= this.cfg.minBandRounds &&
+                                             maxDeltaValueForPolish < this.cfg.stopDelta &&
+                                             this.cfg.requireOverlap;
+        
+            if (isEffectivelyInPolishCondition) {
+                this.polishCycleCounter++;
+                // console.log("Polish cycle counter: ", this.polishCycleCounter, "Max:", this.maxPolishCycles);
+                if (this.polishCycleCounter > this.maxPolishCycles) {
+                    // console.log("Max polish cycles reached. Setting stagnation flag.");
+                    this.polishStagnationDetected = true; 
+                    if (this.shouldStop()) return null; // Re-check immediately if flag is set
+                }
+            } else {
+                this.polishCycleCounter = 0; // Reset if not in a polish-loop state
+            }
+
+            // Determine current phase and populate queue if empty
+            if (!this.phase1Done) {
+                this.currentPhase = 'seed';
+                this.phase1();
+                if (this.queue.length === 0) { // e.g. only 1 item, phase1 produces no pairs
+                    this.phase1Done = true; // Mark as done to proceed
+                }
+            } else {
+                // *** MODIFICATION START: Refined phase transition logic ***
+                const recentDeltas = Object.values(this.data)
+                    .filter(d => d.last_delta_update_step >= this.round_start_step)
+                    .map(d => Math.abs(d.last_delta));
+                const maxDeltaValue = recentDeltas.length > 0 ? Math.max(...recentDeltas) : 0;
+
+                // Conditions for Polish: overlap required, min rounds done, deltas low.
+                if (this.cfg.requireOverlap &&
+                    this.bandRoundsDone >= this.cfg.minBandRounds &&
+                    maxDeltaValue < this.cfg.stopDelta) {
+                    this.currentPhase = 'polish';
+                    this.phase3();
+                } else {
+                    // Default to Learn phase if Polish conditions not met.
+                    this.currentPhase = 'learn';
+                    this.phase2();
+                }
+                // *** MODIFICATION END ***
+            }
+             // If after trying to fill the queue, it's still empty, AND we should stop, then stop.
+            if (this.queue.length === 0 && this.shouldStop()) return null;
+            // Safety break for rare cases where phases might not produce queue items but shouldStop is false.
+            // This shouldn't be hit with correct phase logic but acts as a guard.
+            if (this.queue.length === 0 && !this.shouldStop() && (this.currentPhase === 'learn' || this.currentPhase === 'polish')) {
+                 // console.warn("Queue empty after phase execution, but shouldStop() is false. Forcing stop to prevent loop.");
+                 // This might indicate an issue in phase logic or shouldStop criteria for very small N or specific configs.
+                 // For now, we will assume phase logic or shouldStop() will eventually lead to termination.
+                 // If an infinite loop persists, this area might need closer inspection for specific item counts/configs.
+                 // One possible cause: if phase2/3 generates no pairs and shouldStop is false,
+                 // we need to ensure shouldStop eventually becomes true.
+                 // The polishStagnationDetected flags and polishCycleCounter are key here.
+            }
+        }
+        
+        const nextPair = this.queue.shift();
+        if (this.currentPhase === 'seed' && this.queue.length === 0 && this.phase1InitialQueueSize > 0) {
+            this.phase1Done = true; // Mark seed phase done when its queue is exhausted
+        }
+        this.stepCount++;
+        
+        // UI hint update, not strict logic
+        if (this.comparisonTarget === Infinity && this.shouldStop()) { // Only set if it was infinity and now we think we should stop
+            this.comparisonTarget = this.stepCount + Math.max(10, this.items.length); // Give a small buffer
+        } else if (this.comparisonTarget === Infinity) {
+            // Initial rough estimate if not set by preset
+            this.comparisonTarget = this.items.length * Math.log2(this.items.length) * 1.5; // Very rough guess
+        }
+
+
+        return nextPair;
+    }
+
+    record(winner, loser) {
+        const wi = this.data[winner], lo = this.data[loser];
+        const exp = 1 / (1 + 10 ** ((lo.rating - wi.rating) / 400));
+        // K factor adjustment based on games played for the winner (could be avg or min games of pair)
+        const gamesPlayedFactor = Math.log2(wi.games_played + 2); // Adding 2 to prevent log2(1)=0 or log2(0)
+        const rawK = gamesPlayedFactor > 0 ? (64 / gamesPlayedFactor) : 64; // If gamesPlayedFactor is 0, use max K
+        const K = Math.max(this.cfg.Kfloor, rawK);
+
+        const delta = K * (1 - exp);
+        wi.rating += delta;
+        lo.rating -= delta;
+        wi.last_delta = delta;
+        lo.last_delta = -delta;
+        wi.last_delta_update_step = this.stepCount;
+        lo.last_delta_update_step = this.stepCount;
+        wi.games_played++;
+        lo.games_played++;
+        const pairKey = [winner, loser].sort().join('@@');
+        this.comparedPairs.add(pairKey);
+    }
+
+    reforecast() {
+        // Initialize estimates
+        let seedCost = 0;
+        let swissNeededMin = 0;
+        let swissNeededMax = 0;
+        let polishNeededMin = 0;
+        let polishNeededMax = 0;
+
+        const N = this.items.length;
+        if (N <= 1) {
+            this.remainingLow = 0;
+            this.remainingHigh = 0;
+            return;
+        }
+
+        // 1. Seed Cost
+        if (this.currentPhase === 'seed' && !this.phase1Done) {
+            seedCost = this.queue.length > 0 ? this.queue.length : (N - 1 - (this.phase1InitialQueueSize - this.queue.length));
+            seedCost = Math.max(0, seedCost);
+        } else {
+            seedCost = 0; // Seed phase done or skipped
+        }
+
+
+        // 2. Swiss Rounds Cost (Learn Phase)
+        if (this.phase1Done) {
+            const pairsPerSwissPassApproximation = Math.ceil(N / 2); // Rough estimate
+
+            if (this.bandRoundsDone < this.cfg.minBandRounds) {
+                swissNeededMin = (this.cfg.minBandRounds - this.bandRoundsDone) * pairsPerSwissPassApproximation;
+            }
+            // Estimate additional Swiss rounds based on current delta
+            const currentMaxDelta = Object.values(this.data)
+                                 .filter(d => d.last_delta_update_step >= this.round_start_step)
+                                 .map(d => Math.abs(d.last_delta));
+            const maxDeltaValue = currentMaxDelta.length > 0 ? Math.max(...currentMaxDelta) : 0;
+
+            let additionalSwissForDelta = 0;
+            if (maxDeltaValue >= this.cfg.stopDelta) {
+                additionalSwissForDelta = pairsPerSwissPassApproximation; // Assume at least one more full pass if delta is high
+            }
+            swissNeededMax = swissNeededMin + additionalSwissForDelta;
+            
+            // If not requiring overlap, polish phase is skipped, so Swiss might need to do more.
+            if (!this.cfg.requireOverlap && maxDeltaValue < this.cfg.stopDelta && this.bandRoundsDone >= this.cfg.minBandRounds) {
+                // If we would normally stop here but exhaustive check is pending.
+                if (this.cfg.key === 'exhaustive') {
+                    const sortedItems = this.results();
+                    let untestedNeighbors = 0;
+                    if (sortedItems.length > 1) {
+                        for (let i = 0; i < sortedItems.length - 1; i++) {
+                            const pairKey = [sortedItems[i], sortedItems[i+1]].sort().join('@@');
+                            if (!this.comparedPairs.has(pairKey)) {
+                                untestedNeighbors++;
+                            }
+                        }
+                    }
+                    swissNeededMax += untestedNeighbors; // Add untested neighbors to max estimate
+                }
+            }
+        }
+
+
+        // 3. Polish Phase Cost
+        if (this.cfg.requireOverlap && this.phase1Done && this.bandRoundsDone >= this.cfg.minBandRounds) {
+            const sorted = this.results();
+            let currentOverlaps = 0;
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const a = sorted[i], b = sorted[i+1];
+                const confA = this.cfg.Kfloor / Math.sqrt(this.data[a].games_played || 1);
+                const confB = this.cfg.Kfloor / Math.sqrt(this.data[b].games_played || 1);
+                if (Math.abs(this.data[a].rating - this.data[b].rating) < Math.max(confA, confB)) {
+                    currentOverlaps++;
+                }
+            }
+            polishNeededMin = currentOverlaps; // At least one comparison per current overlap
+            polishNeededMax = currentOverlaps * 2; // Upper bound: each might need re-comparison, then check again
+
+            // If exhaustive, add untested neighbors to polish phase if overlaps are resolved
+             if (this.cfg.key === 'exhaustive' && currentOverlaps === 0) {
+                const sortedItems = this.results();
+                let untestedNeighborsInPolish = 0;
+                if (sortedItems.length > 1) {
+                    for (let i = 0; i < sortedItems.length - 1; i++) {
+                        const pairKey = [sortedItems[i], sortedItems[i+1]].sort().join('@@');
+                        if (!this.comparedPairs.has(pairKey)) {
+                            untestedNeighborsInPolish++;
+                        }
+                    }
+                }
+                polishNeededMax += untestedNeighborsInPolish;
+            }
+        }
+        
+        this.remainingLow = seedCost + swissNeededMin + polishNeededMin;
+        this.remainingHigh = seedCost + swissNeededMax + polishNeededMax;
+
+        this.remainingLow = Math.max(0, this.remainingLow);
+        this.remainingHigh = Math.max(0, this.remainingHigh);
+
+        // Current queue is a hard minimum
+        this.remainingLow = Math.max(this.remainingLow, this.queue.length);
+        this.remainingHigh = Math.max(this.remainingHigh, this.queue.length, this.remainingLow);
+
+
+        // Update total estimated comparisons for progress bar segments
+        this.totalSeedComparisons = N > 1 ? N - 1 : 0;
+        
+        let estTotalSwissPasses = this.cfg.minBandRounds;
+        // Add more estimated passes if current deltas are high or more rounds already done
+        if (this.bandRoundsDone > estTotalSwissPasses) estTotalSwissPasses = this.bandRoundsDone;
+        
+        const currentMaxDeltaForTotal = Object.values(this.data).map(d => Math.abs(d.last_delta));
+        const maxDeltaValueForTotal = currentMaxDeltaForTotal.length > 0 ? Math.max(...currentMaxDeltaForTotal) : 0;
+        if(maxDeltaValueForTotal >= this.cfg.stopDelta) estTotalSwissPasses +=1; // buffer if deltas still high
+        
+        this.totalLearnComparisons = N > 1 ? estTotalSwissPasses * Math.ceil(N / 2) : 0;
+
+        let estPolishComparisons = 0;
+        if (this.cfg.requireOverlap) {
+            estPolishComparisons = N > 1 ? N -1 : 0; // Estimate roughly N-1 for a full pass of overlaps
+            if (this.cfg.key === 'exhaustive') estPolishComparisons += (N > 1 ? N-1 : 0); // Potentially another pass for exhaustive
+        }
+        this.totalPolishComparisons = estPolishComparisons;
+
+        if (this.shouldStop()) { // If actually stopped, forecast 0
+             this.remainingLow = 0;
+             this.remainingHigh = 0;
+        }
+    }
+    results() {
+        return [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+    }
+}
+
+let sorter, current;
+const debugEl = document.getElementById('debug-info');
+const progText = document.getElementById('progress-text');
+
+// Setup submission
+document.getElementById('submit-items').onclick = () => {
+    const raw = document.getElementById('items-input').value;
+    const items = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    if (items.length < 2) {
+        alert("Please enter at least two items to sort.");
         return;
-      }
-
-      const pair = getNextPair();
-      if (!pair) {
-        finish();
-        return;
-      }
-
-      // show pair to user
-      $("left").textContent = pair[0];
-      $("right").textContent = pair[1];
-      $("left").onclick = () => chooseWinner(pair, 0);
-      $("right").onclick = () => chooseWinner(pair, 1);
-
-      $("progress").textContent = `Comparison ${comparisons + 1} of ${maxComparisons}`;
     }
+    window.items = items;
+    const n = items.length;
+    presets.forEach(p => {
+        // Simplified estimation for UI, actual comparisons can vary a lot
+        let estComps = (n * Math.log2(n) * 1.5); // Basic merge sort type estimate
+        if (p.key === 'quick') estComps *= 0.75;
+        if (p.key === 'exhaustive') estComps *= 1.5;
+        estComps = Math.max(n-1, Math.round(estComps));
 
-    function chooseWinner(pair, winnerIdx) {
-      updateElo(pair, winnerIdx);
-      comparisons++;
-      nextComparison();
-    }
-
-    function finish() {
-      $("compare").classList.add("hidden");
-      $("results").classList.remove("hidden");
-
-      const sortedFinal = [...items].sort((a, b) => ratings[b] - ratings[a]);
-      const list = $("rankList");
-      list.innerHTML = "";
-      sortedFinal.forEach((item) => {
-        const li = document.createElement("li");
-        li.textContent = `${item}  (Elo: ${Math.round(ratings[item])})`;
-        list.appendChild(li);
-      });
-    }
-
-    // ====== depth buttons events =======
-    document.querySelectorAll(".depth-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const depth = parseInt(btn.dataset.depth, 10);
-        startSorter(depth);
-      });
+        const mins = (estComps * 4 / 60).toFixed(1); // Assuming 4 seconds per comparison
+        document.querySelector(`#preset-screen button[data-preset="${p.key}"]`).innerHTML =
+            `${p.name}<br><small>≈ ${estComps} comps<br>≈ ${mins} min</small>`;
+        p.estimatedComparisons = estComps; // Store for initial comparisonTarget
     });
-  </script>
+    document.getElementById('setup-screen').classList.add('hidden');
+    document.getElementById('preset-screen').classList.remove('hidden');
+};
+
+// Preset selection
+document.querySelectorAll('#preset-screen button').forEach(btn => {
+    btn.onclick = () => {
+        const key = btn.getAttribute('data-preset');
+        const p = presets.find(o => o.key === key);
+        sorter = new EloSorter(window.items, p);
+        sorter.comparisonTarget = p.estimatedComparisons; // Initial UI hint from preset
+        sorter.reforecast(); // Initial forecast for progress bar totals
+        document.getElementById('preset-screen').classList.add('hidden');
+        document.getElementById('battle-screen').classList.remove('hidden');
+        nextBattle();
+    };
+});
+
+// Core battle loop
+function nextBattle() {
+    current = sorter.next(); // Get next pair AFTER potential state changes in sorter.next()
+
+    if (!current) { // No more pairs, sorting is complete
+        showResults();
+        return;
+    }
+
+    // Update UI for the new battle
+    const [a, b] = current;
+    document.getElementById('choice-a').textContent = a;
+    document.getElementById('choice-b').textContent = b;
+    
+    // Debug info
+    const da = sorter.data[a], db = sorter.data[b];
+    debugEl.textContent =
+        `Phase: ${sorter.currentPhase}, Phase1Done: ${sorter.phase1Done}, BandsDone: ${sorter.bandRoundsDone}/${sorter.cfg.minBandRounds}\n` +
+        `PolishStagnation: ${sorter.polishStagnationDetected}, PolishCycles: ${sorter.polishCycleCounter}/${sorter.maxPolishCycles}\n` +
+        `Queue: ${sorter.queue.length}, Next: ${a} (${da.rating.toFixed(0)}, ${da.games_played}g) vs ${b} (${db.rating.toFixed(0)}, ${db.games_played}g)\n` +
+        `Last ΔA: ${da.last_delta.toFixed(1)}, Last ΔB: ${db.last_delta.toFixed(1)}`;
+
+    // Progress Bar Update
+    const seedSegment = document.getElementById('progress-seed');
+    const learnSegment = document.getElementById('progress-learn');
+    const polishSegment = document.getElementById('progress-polish');
+
+    // Reset glows
+    seedSegment.classList.remove('active-glow');
+    learnSegment.classList.remove('active-glow');
+    polishSegment.classList.remove('active-glow');
+
+    let overallProgressPercent = 0;
+    const totalEstimatedComparisons = sorter.totalSeedComparisons + sorter.totalLearnComparisons + sorter.totalPolishComparisons;
+
+    if (sorter.currentPhase === 'seed' || !sorter.phase1Done) {
+        seedSegment.classList.add('active-glow');
+        let seedProgress = sorter.totalSeedComparisons > 0 ? ( (sorter.phase1InitialQueueSize - sorter.queue.length) / sorter.totalSeedComparisons) * 100 : 0;
+        if(sorter.phase1Done) seedProgress = 100;
+        seedSegment.style.width = `${Math.min(100, Math.max(0, seedProgress))}%`;
+        learnSegment.style.width = '0%';
+        polishSegment.style.width = '0%';
+    } else if (sorter.currentPhase === 'learn') {
+        seedSegment.style.width = '100%';
+        learnSegment.classList.add('active-glow');
+        // Progress within learn is harder; estimate based on bandRounds vs minBandRounds and delta
+        let learnProgress = 0;
+        if (sorter.totalLearnComparisons > 0) {
+            // Simplified: proportion of band rounds done, or if deltas are low
+            const bandRoundProgress = (sorter.bandRoundsDone / sorter.cfg.minBandRounds) * 50; // 50% for rounds
+            const recentDeltas = Object.values(sorter.data)
+                .filter(d => d.last_delta_update_step >= sorter.round_start_step)
+                .map(d => Math.abs(d.last_delta));
+            const maxDelta = recentDeltas.length > 0 ? Math.max(...recentDeltas) : 0;
+            const deltaProgress = (maxDelta < sorter.cfg.stopDelta) ? 50 : (sorter.cfg.stopDelta / (maxDelta || sorter.cfg.stopDelta)) * 25; // 50% for delta reduction
+            learnProgress = Math.min(100, bandRoundProgress + deltaProgress);
+        }
+         // If conditions for polish are met, learn is "done" for progress bar purposes
+        const maxDeltaForPolishCheck = Object.values(sorter.data)
+                .filter(d => d.last_delta_update_step >= sorter.round_start_step)
+                .map(d => Math.abs(d.last_delta));
+        const currentMaxDelta = maxDeltaForPolishCheck.length > 0 ? Math.max(...maxDeltaForPolishCheck) : 0;
+        if (sorter.cfg.requireOverlap && sorter.bandRoundsDone >= sorter.cfg.minBandRounds && currentMaxDelta < sorter.cfg.stopDelta) {
+            learnProgress = 100;
+        }
+
+        learnSegment.style.width = `${Math.min(100, Math.max(0, learnProgress))}%`;
+        polishSegment.style.width = '0%';
+    } else if (sorter.currentPhase === 'polish') {
+        seedSegment.style.width = '100%';
+        learnSegment.style.width = '100%';
+        polishSegment.classList.add('active-glow');
+        // Polish progress: number of overlaps resolved or stagnation cycle count
+        let polishProgress = 0;
+        if (sorter.totalPolishComparisons > 0) {
+             // Estimate based on how many overlaps are left, vs initial typical (N-1)
+            const sorted = sorter.results();
+            let currentOverlaps = 0;
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const a = sorted[i], b = sorted[i+1];
+                const confA = sorter.cfg.Kfloor / Math.sqrt(sorter.data[a].games_played || 1);
+                const confB = sorter.cfg.Kfloor / Math.sqrt(sorter.data[b].games_played || 1);
+                if (Math.abs(sorter.data[a].rating - sorter.data[b].rating) < Math.max(confA, confB)) {
+                    currentOverlaps++;
+                }
+            }
+            const initialOverlapsEstimate = sorter.items.length -1; // Rough
+            polishProgress = initialOverlapsEstimate > 0 ? ((initialOverlapsEstimate - currentOverlaps) / initialOverlapsEstimate) * 100 : 0;
+            if(currentOverlaps === 0 && sorter.cfg.requireOverlap) polishProgress = 100; // All overlaps resolved
+        }
+        polishSegment.style.width = `${Math.min(100, Math.max(0, polishProgress))}%`;
+    }
+    
+    // Progress Text
+    let estimatedToGoText;
+    if (sorter.remainingHigh === Infinity || sorter.remainingLow === sorter.remainingHigh && sorter.remainingHigh === 0 && !sorter.shouldStop()) { // Still estimating or truly 0 but not stopped yet
+        estimatedToGoText = 'estimating...';
+    } else if (sorter.remainingLow === sorter.remainingHigh) {
+        estimatedToGoText = sorter.remainingHigh;
+    } else {
+        estimatedToGoText = `${sorter.remainingLow}-${sorter.remainingHigh}`;
+    }
+     if (sorter.shouldStop() && sorter.queue.length === 0) { // If fully stopped
+        estimatedToGoText = '0';
+        seedSegment.style.width = '100%';
+        learnSegment.style.width = '100%';
+        if(sorter.cfg.requireOverlap || sorter.totalPolishComparisons > 0) polishSegment.style.width = '100%'; else polishSegment.style.width = '0%';
+        seedSegment.classList.remove('active-glow');
+        learnSegment.classList.remove('active-glow');
+        polishSegment.classList.remove('active-glow');
+    }
+    
+    progText.textContent = `${sorter.stepCount} comparison${sorter.stepCount === 1 ? '' : 's'} done - ≈ ${estimatedToGoText} to go`;
+
+
+    // Badge Update Logic
+    const badgeSeed = document.getElementById('badge-seed');
+    const badgeMinSwiss = document.getElementById('badge-min-swiss');
+    const badgeMaxDelta = document.getElementById('badge-max-delta');
+    const badgeNoOverlap = document.getElementById('badge-no-overlap');
+
+    [badgeSeed, badgeMinSwiss, badgeMaxDelta, badgeNoOverlap].forEach(b => b.className = 'badge'); // Reset
+
+    if (sorter.phase1Done) badgeSeed.classList.add('completed'); else badgeSeed.classList.add('pending');
+    if (sorter.bandRoundsDone >= sorter.cfg.minBandRounds) badgeMinSwiss.classList.add('completed'); else badgeMinSwiss.classList.add('pending');
+    
+    const recentDeltasForBadge = Object.values(sorter.data)
+        .filter(d => d.last_delta_update_step >= sorter.round_start_step)
+        .map(d => Math.abs(d.last_delta));
+    const maxDeltaForBadge = recentDeltasForBadge.length > 0 ? Math.max(...recentDeltasForBadge) : 0;
+    if (maxDeltaForBadge < sorter.cfg.stopDelta && sorter.phase1Done) badgeMaxDelta.classList.add('completed'); else badgeMaxDelta.classList.add('pending');
+
+    if (sorter.cfg.requireOverlap) {
+        badgeNoOverlap.classList.remove('not-applicable');
+        let overlapFoundForBadge = false;
+        const sortedItemsForBadge = sorter.results();
+        if (sortedItemsForBadge.length > 1) {
+            for (let i = 0; i < sortedItemsForBadge.length - 1; i++) {
+                const itemA = sortedItemsForBadge[i], itemB = sortedItemsForBadge[i+1];
+                const confA = sorter.cfg.Kfloor / Math.sqrt(sorter.data[itemA].games_played || 1);
+                const confB = sorter.cfg.Kfloor / Math.sqrt(sorter.data[itemB].games_played || 1);
+                if (Math.abs(sorter.data[itemA].rating - sorter.data[itemB].rating) < Math.max(confA, confB)) {
+                    overlapFoundForBadge = true;
+                    break;
+                }
+            }
+        }
+        if (!overlapFoundForBadge && sorter.phase1Done && sorter.bandRoundsDone >= sorter.cfg.minBandRounds) {
+            badgeNoOverlap.classList.add('completed');
+        } else {
+            badgeNoOverlap.classList.add('pending');
+        }
+    } else {
+        badgeNoOverlap.classList.add('not-applicable');
+    }
+
+    // If sorter logic says it should stop and queue is empty, mark all applicable as completed for final display.
+    if (sorter.shouldStop() && sorter.queue.length === 0) {
+        badgeSeed.classList.add('completed');
+        badgeMinSwiss.classList.add('completed');
+        badgeMaxDelta.classList.add('completed');
+        if (sorter.cfg.requireOverlap) badgeNoOverlap.classList.add('completed');
+    }
+}
+
+// Record user choice
+function recordChoice(idx) {
+    if (!current) return; // Should not happen if UI is responsive
+    sorter.record(current[idx], current[1-idx]);
+    sorter.reforecast(); 
+    nextBattle();
+}
+
+document.getElementById('choice-a').onclick = () => recordChoice(0);
+document.getElementById('choice-b').onclick = () => recordChoice(1);
+document.getElementById('skip-btn').onclick = () => { 
+    // Skipping doesn't change ratings but consumes a pair from queue
+    // console.log("Skipped pair:", current);
+    sorter.reforecast(); // Recalculate estimates as queue changes
+    nextBattle(); 
+};
+document.addEventListener('keydown', e => {
+    if (!current || document.getElementById('battle-screen').classList.contains('hidden')) {
+        return; // No current battle or battle screen not visible
+    }
+    if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        recordChoice(0);
+    }
+    if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        recordChoice(1);
+    }
+    if (e.key === ' ') { // Space to skip
+        e.preventDefault();
+        document.getElementById('skip-btn').click();
+    }
+});
+
+// Display results
+function showResults() {
+    document.getElementById('battle-screen').classList.add('hidden');
+    document.getElementById('results-screen').classList.remove('hidden');
+    const ol = document.getElementById('results-list');
+    ol.innerHTML = '';
+    const finalResults = sorter.results();
+    finalResults.forEach(item => {
+        const li = document.createElement('li'); 
+        li.textContent = `${item} (Rating: ${sorter.data[item].rating.toFixed(1)}, Games: ${sorter.data[item].games_played})`; 
+        ol.appendChild(li);
+    });
+    // Calculate a simple confidence score for the whole list
+    let minConfidenceSeparation = Infinity;
+    if (finalResults.length > 1) {
+        for (let i = 0; i < finalResults.length - 1; i++) {
+            const itemA = finalResults[i];
+            const itemB = finalResults[i+1];
+            const ratingDiff = Math.abs(sorter.data[itemA].rating - sorter.data[itemB].rating);
+            const confA = sorter.cfg.Kfloor / Math.sqrt(sorter.data[itemA].games_played || 1);
+            const confB = sorter.cfg.Kfloor / Math.sqrt(sorter.data[itemB].games_played || 1);
+            const requiredSeparation = Math.max(confA, confB);
+            minConfidenceSeparation = Math.min(minConfidenceSeparation, ratingDiff / requiredSeparation);
+        }
+    } else {
+         minConfidenceSeparation = 1; // Perfect confidence for a single item or empty list
+    }
+    const confidencePercentage = Math.min(100, Math.max(0, minConfidenceSeparation * 100)).toFixed(1);
+    
+    const confidenceEl = document.createElement('p');
+    confidenceEl.innerHTML = `Overall List Confidence Score: <strong>${confidencePercentage}%</strong> <small>(based on narrowest rating gap vs. confidence interval)</small>`;
+    ol.parentNode.insertBefore(confidenceEl, ol);
+
+
+    document.getElementById('restart-btn').onclick = () => location.reload();
+}
+
+const tooltipData = {
+    seed: {
+        name: "Phase 1: Seed",
+        description: "Performing an initial pass to get a rough order of items. Each item is compared with its direct neighbour once.",
+        rationale: "This helps quickly separate obvious top and bottom items, providing a better starting point for more detailed sorting."
+    },
+    learn: {
+        name: "Phase 2: Learn (Swiss Rounds)",
+        description: "Comparing items with similar current ratings in 'Swiss-style' rounds. This focuses on resolving uncertainty between closely ranked items.",
+        rationale: "More comparisons refine the rankings. The system tries to find the most informative pairs to ask next."
+    },
+    polish: {
+        name: "Phase 3: Polish",
+        description: "Final comparisons for items whose rankings are still very close and confidence bands overlap.",
+        rationale: "This ensures that adjacent items in the final list are confidently distinct, meeting the preset's precision goal."
+    }
+};
+
+const progressBarContainer = document.querySelector('.progress-bar');
+// Tooltip elements need to be created if they don't exist or fetched if they do.
+// Assuming they are in the HTML as per original.
+const tooltipElement = document.getElementById('progress-tooltip'); // Ensure this element exists in HTML
+const tooltipPhaseName = document.getElementById('tooltip-phase-name');
+const tooltipPhaseDescription = document.getElementById('tooltip-phase-description');
+const tooltipPhaseRationale = document.getElementById('tooltip-phase-rationale');
+
+if (progressBarContainer && tooltipElement && tooltipPhaseName && tooltipPhaseDescription && tooltipPhaseRationale) {
+    progressBarContainer.addEventListener('mousemove', (event) => { // Changed to mousemove for dynamic updates
+        const rect = progressBarContainer.getBoundingClientRect();
+        const x = event.clientX - rect.left; // x position within the element.
+        const totalWidth = rect.width;
+        
+        let phaseKeyToShow = 'seed'; // Default
+        if (sorter) { // Check if sorter is initialized
+            // Determine which segment is being hovered based on sorter's current phase and progress
+            // This is a simplified approach; more accurate would be to check segment widths.
+             phaseKeyToShow = sorter.currentPhase; // Show current active phase info
+        }
+
+
+        const phaseInfo = tooltipData[phaseKeyToShow];
+        if (phaseInfo) {
+            tooltipPhaseName.textContent = phaseInfo.name;
+            tooltipPhaseDescription.textContent = phaseInfo.description;
+            tooltipPhaseRationale.textContent = phaseInfo.rationale;
+
+            // Position tooltip near mouse
+            tooltipElement.style.left = event.pageX + 15 + 'px'; 
+            tooltipElement.style.top = event.pageY + 15 + 'px';  
+            
+            tooltipElement.classList.remove('hidden');
+        } else {
+            tooltipElement.classList.add('hidden');
+        }
+    });
+
+    progressBarContainer.addEventListener('mouseout', () => {
+        tooltipElement.classList.add('hidden');
+    });
+} else {
+    // console.warn("Tooltip elements or progress bar container not found. Tooltip functionality will be disabled.");
+}
+</script>
+<div id="progress-tooltip" class="tooltip hidden">
+    <strong id="tooltip-phase-name"></strong>
+    <p id="tooltip-phase-description"></p>
+    <p id="tooltip-phase-rationale"></p>
+</div>
 </body>
 </html>
