@@ -180,6 +180,8 @@ class EloSorter {
         this.totalLearnComparisons = 0;
         this.totalPolishComparisons = 0;
         this.phase1InitialQueueSize = 0;
+        this.lastPhase3OverlapSignature = null;
+        this.polishStagnationDetected = false;
     }
     phase1() {
         for (let i = 0; i < this.items.length - 1; i++) {
@@ -189,6 +191,9 @@ class EloSorter {
         this.phase1Done = true;
     }
     phase2() {
+        this.lastPhase3OverlapSignature = null;
+        this.polishStagnationDetected = false;
+        // console.log("Reset polish stagnation fields due to new phase2 round."); // Optional debug log
         this.round_start_step = this.stepCount;
         const sorted = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
         const bands = [];
@@ -207,17 +212,53 @@ class EloSorter {
         this.bandRoundsDone++;
     }
     phase3() {
-        const sorted = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
-        for (let i = 0; i < sorted.length - 1; i++) {
-            const a = sorted[i], b = sorted[i+1];
-            const confA = this.cfg.Kfloor / Math.sqrt(this.data[a].games_played || 1);
-            const confB = this.cfg.Kfloor / Math.sqrt(this.data[b].games_played || 1);
-            if (Math.abs(this.data[a].rating - this.data[b].rating) < Math.max(confA, confB)) {
-                this.queue.push([a, b]);
+        // --- Revised phase3 structure ---
+        // this.polishStagnationDetected = false; // Default, will be set true if stagnation found
+
+        const sortedForPhase3 = [...this.items].sort((a,b) => this.data[b].rating - this.data[a].rating);
+        const currentOverlappingPairKeys = []; // Store string keys for signature
+        const pairsToQueue = []; // Store actual [itemA, itemB] for queueing
+
+        if (sortedForPhase3.length > 1) {
+            for (let i = 0; i < sortedForPhase3.length - 1; i++) {
+                const itemA = sortedForPhase3[i];
+                const itemB = sortedForPhase3[i+1];
+                const confA = this.cfg.Kfloor / Math.sqrt(this.data[itemA].games_played || 1);
+                const confB = this.cfg.Kfloor / Math.sqrt(this.data[itemB].games_played || 1);
+
+                if (Math.abs(this.data[itemA].rating - this.data[itemB].rating) < Math.max(confA, confB)) {
+                    currentOverlappingPairKeys.push([itemA, itemB].sort().join('@@'));
+                    pairsToQueue.push([itemA, itemB]); // Store the actual pair
+                }
             }
         }
+
+        const newOverlapSignature = currentOverlappingPairKeys.sort().join('|');
+
+        if (this.lastPhase3OverlapSignature !== null &&
+            newOverlapSignature === this.lastPhase3OverlapSignature &&
+            newOverlapSignature !== "") { // Check for non-empty signature for stagnation
+            
+            this.polishStagnationDetected = true;
+            // console.log("Polish phase stagnation. Overlaps: " + newOverlapSignature); // Optional
+            return; // Critical: stop processing and do not queue
+        }
+
+        // If we reach here, no stagnation / different overlaps / first time / no overlaps
+        this.polishStagnationDetected = false; // Explicitly set to false if not stagnated
+        this.lastPhase3OverlapSignature = newOverlapSignature;
+
+        if (pairsToQueue.length > 0) {
+            // console.log("Phase3 queueing pairs: ", pairsToQueue.length); // Optional
+            pairsToQueue.forEach(pair => this.queue.push(pair));
+        }
+        // --- End of revised phase3 structure ---
     }
     shouldStop() {
+        if (this.polishStagnationDetected) {
+            // console.log("Stopping due to polish stagnation."); // Optional debug log
+            return true;
+        }
         if (this.bandRoundsDone < this.cfg.minBandRounds) return false;
         const recentDeltas = Object.values(this.data)
             .filter(d => d.last_delta_update_step >= this.round_start_step)
